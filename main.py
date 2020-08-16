@@ -2,8 +2,8 @@ import json
 from convert_func import raw_event_to_winlogbeat_event, convert_event
 
 input_large_dataset_path = './mordor-master/datasets/large/apt29/day1/apt29_evals_day1_manual_2020-05-01225525.json'
-output_large_dataset_path = './output_folder/sample_output.json'
-sample_size = 1000
+output_large_dataset_path = './output_folder/output.json'
+sample_size = 1000000
 
 
 if __name__ == '__main__':

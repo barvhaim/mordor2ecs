@@ -119,7 +119,7 @@ def map_windows_fields(evt):
 
     evt_fields_to_add = dict(evt_fields_to_add)
     # merge sub-dicts - user
-    if 'user' in evt:
+    if 'user' in evt and 'user' in evt_fields_to_add:
         evt['user'] = {**evt['user'], **evt_fields_to_add['user']}
         del evt_fields_to_add['user']
 
