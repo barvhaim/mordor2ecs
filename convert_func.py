@@ -234,8 +234,9 @@ def set_registry_fields(evt):
 
 
 def convert_event(evt):
-    if 'event_id' in evt:
-        if (1 <= evt['event_id'] <= 23) or evt['event_id'] == 255:
+    if 'event' in evt and 'id' in evt['event']:
+        event_id = evt['event']['id']
+        if (1 <= event_id <= 23) or event_id == 255:
             evt = map_sysmon_fields(evt)
             evt = set_process_name_from_path(evt, "process.executable", "process.name")
             evt = split_command_line(evt, "process.command_line", "process.args")
