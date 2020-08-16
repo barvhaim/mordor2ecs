@@ -71,3 +71,37 @@ common_registry_hives = {
     "HKEY_USERS": "HKU",
     "HKU": "HKU"
 }
+
+sysmon_event_action = {
+    1: "Process Create (rule: ProcessCreate)",
+    2: "File creation time changed (rule: FileCreateTime)",
+    3: "Network connection detected (rule: NetworkConnect)",
+    4: "Sysmon service state changed",
+    5: "Process terminated (rule: ProcessTerminate)",
+    6: "Driver loaded (rule: DriverLoad)",
+    7: "Image loaded (rule: ImageLoad)",
+    8: "CreateRemoteThread detected (rule: CreateRemoteThread)",
+    9: "RawAccessRead detected (rule: RawAccessRead)",
+    10: "Process Access (rule: ProcessAccess)",
+    11: "File created (rule: FileCreate)",
+    12: "Registry object added or deleted (rule: RegistryEvent)",
+    13: "Registry value set (rule: RegistryEvent)",
+    14: "Registry object renamed (rule: RegistryEvent)",
+    15: "File stream created (rule: FileCreateStreamHash)",
+    16: "Sysmon config state changed",
+    17: "Pipe Created (rule: PipeEvent)",
+    18: "Pipe Connected (rule: PipeEvent)",
+    19: "WmiEventFilter activity detected (rule: WmiEvent)",
+    20: "WmiEventConsumer activity detected (rule: WmiEvent)",
+    21: "WmiEventConsumerToFilter activity detected (rule: WmiEvent)"
+}
+
+sysmon_event_category = {
+    1: "process",
+    5: "process"
+}
+
+sysmon_event_type = {
+    1: "process_start",
+    5: "process_end"
+}

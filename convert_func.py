@@ -4,7 +4,8 @@ Convert raw "Mordor" large-dataset events to "winlogbeat" 7.8 ECS format events
 """
 from datetime import datetime
 from dotty_dict import dotty
-from mappings import sysmon_fields_mapping, windows_fields_mapping, common_registry_hives
+from mappings import sysmon_fields_mapping, windows_fields_mapping, common_registry_hives, sysmon_event_action, \
+    sysmon_event_category, sysmon_event_type
 
 
 def raw_event_to_winlogbeat_event(event_json):
@@ -47,7 +48,11 @@ def raw_event_to_winlogbeat_event(event_json):
     logbeat_event['event']['dataset'] = "mordor"
 
     if 'Channel' in event_json:
-        logbeat_event['event']['provider'] = event_json['Channel']
+        if '/' in event_json['Channel']:
+            provider = event_json['Channel'].split("/")[0]
+        else:
+            provider = event_json['Channel']
+        logbeat_event['event']['provider'] = provider
 
     if 'EventType' in event_json:
         logbeat_event['event']['type'] = event_json['EventType'].lower()
@@ -83,7 +88,24 @@ def map_sysmon_fields(evt):
             if field in sysmon_fields_mapping:
                 evt_fields_to_add[sysmon_fields_mapping[field]] = evt['event_data'][field]
                 del evt['event_data'][field]
-    return {**evt, **dict(evt_fields_to_add)}
+
+    # event fields by event id
+    event_id = evt['event']['id']
+    if event_id in sysmon_event_action:
+        evt_fields_to_add['event.action'] = sysmon_event_action[event_id]
+    if event_id in sysmon_event_type:
+        evt_fields_to_add['event.type'] = sysmon_event_type[event_id]
+    if event_id in sysmon_event_category:
+        evt_fields_to_add['event.category'] = sysmon_event_category[event_id]
+    evt_fields_to_add['event.kind'] = 'event'
+    evt_fields_to_add['event.module'] = 'sysmon'
+
+    evt_fields_to_add = dict(evt_fields_to_add)
+    # merge sub-dicts - event
+    evt['event'] = {**evt['event'], **evt_fields_to_add['event']}
+    del evt_fields_to_add['event']
+
+    return {**evt, **evt_fields_to_add}
 
 
 def map_windows_fields(evt):
@@ -94,7 +116,14 @@ def map_windows_fields(evt):
             if field in windows_fields_mapping:
                 evt_fields_to_add[windows_fields_mapping[field]] = evt['event_data'][field]
                 del evt['event_data'][field]
-    return {**evt, **dict(evt_fields_to_add)}
+
+    evt_fields_to_add = dict(evt_fields_to_add)
+    # merge sub-dicts - user
+    if 'user' in evt:
+        evt['user'] = {**evt['user'], **evt_fields_to_add['user']}
+        del evt_fields_to_add['user']
+
+    return {**evt, **evt_fields_to_add}
 
 
 def parse_timestamp(evt):
