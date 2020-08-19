@@ -581,7 +581,7 @@ def event4103(evt):
     return evt
 
 
-def event1404(evt):
+def event4104(evt):
     if 'event' in evt:
         evt['event']['category'] = 'process'
         evt['event']['type'] = 'info'
@@ -591,7 +591,7 @@ def event1404(evt):
     return evt
 
 
-def event1405(evt):
+def event4105(evt):
     if 'event' in evt:
         evt['event']['category'] = 'process'
         evt['event']['type'] = 'start'
@@ -599,7 +599,7 @@ def event1405(evt):
     return evt
 
 
-def event1406(evt):
+def event4106(evt):
     if 'event' in evt:
         evt['event']['category'] = 'process'
         evt['event']['type'] = 'end'
@@ -626,6 +626,16 @@ def convert_event(evt):
             evt = set_additional_signature_fields(evt)
             evt = set_registry_fields(evt)
         elif event_id in powershell_winlogbeat_events:  # PowerShell events
+            """
+                {400,
+                403,
+                600,
+                800,
+                4103,
+                4104,
+                4105,
+                4106}
+            """
             if event_id == 400:
                 evt = event400(evt)
             elif event_id == 403:
@@ -634,14 +644,14 @@ def convert_event(evt):
                 evt = event600(evt)
             elif event_id == 800:
                 evt = event800(evt)
-            elif event_id == 1403:
+            elif event_id == 4103:
                 evt = event4103(evt)
-            elif event_id == 1404:
-                evt = event1404(evt)
-            elif event_id == 1405:
-                evt = event1405(evt)
-            elif event_id == 1406:
-                evt = event1406(evt)
+            elif event_id == 4104:
+                evt = event4104(evt)
+            elif event_id == 4105:
+                evt = event4105(evt)
+            elif event_id == 4106:
+                evt = event4106(evt)
         else:
             evt = map_windows_fields(evt)
             evt = set_process_name_from_path(evt, "process.executable", "process.name")
