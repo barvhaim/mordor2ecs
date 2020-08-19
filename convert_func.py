@@ -5,7 +5,17 @@ Convert raw "Mordor" large-dataset events to "winlogbeat" 7.8 ECS format events
 from datetime import datetime
 from dotty_dict import dotty
 from mappings import sysmon_fields_mapping, windows_fields_mapping, common_registry_hives, sysmon_event_action, \
-    sysmon_event_category, sysmon_event_type
+    sysmon_event_category, sysmon_event_type, powershell_fields_mapping
+import re
+
+powershell_winlogbeat_events = {400,
+                                403,
+                                600,
+                                800,
+                                4103,
+                                4104,
+                                4105,
+                                4106}
 
 
 def raw_event_to_winlogbeat_event(event_json):
@@ -149,19 +159,18 @@ def split_command_line(evt, source, target):
     d = dotty(evt)
     if source in d and d[source]:
         d[target] = d[source].split(' ')[1:]
-    return {**evt, **dict(d)}
+    return dict(d)
 
 
-def add_user(evt):
+def add_user(evt, user_field="User"):
     d = dotty(evt)
-    if "event_data.User" in d:
-        user_parts = d["event_data.User"].split("\\")
+    if "event_data." + user_field in d:
+        user_parts = d["event_data." + user_field].split("\\")
         if len(user_parts) == 2:
             d["user.domain"] = user_parts[0]
             d["user.name"] = user_parts[1]
-            evt = {**evt, **dict(d)}
-            del evt["event_data"]["User"]
-    return evt
+            del d["event_data." + user_field]
+    return dict(d)
 
 
 def set_additional_file_fields_from_path(evt):
@@ -262,6 +271,338 @@ def set_registry_fields(evt):
     return {**evt, **dict(d)}
 
 
+# PowerShell events func -
+# based on https://github.com/elastic/beats/blob/3ef18111c43dad3de7aebe944935ee2e36cab3d6/x-pack/winlogbeat/module/powershell/config/winlogbeat-powershell.js
+def dissect_4xx_and_600_and_800(event_data):
+    d = {}
+    if 'Message' not in event_data:
+        return d
+    message = event_data['Message']
+    message_parts = message.split("\r\n\t")
+    for kv in message_parts:
+        if "=" in kv:
+            kv = kv.replace('\r','').replace('\n','').replace('\t','')
+            kv_parts = kv.split("=")
+            if len(kv_parts) == 2:
+                key = kv_parts[0].strip()
+                value = kv_parts[1].strip()
+                if value != "":
+                    d[key] = value
+    return d
+
+
+def dissect_4103(event_data):
+    d = {}
+    if 'Message' not in event_data:
+        return d
+    message = event_data['Message']
+    message_parts = message.split("        ")
+    for kv in message_parts:
+        if " = " in kv:
+            kv_parts = kv.split(" = ")
+            if len(kv_parts) == 2:
+                key = "".join(kv_parts[0].strip().split(" "))
+                value = kv_parts[1].strip().split("\r\n\r\n\r\n")[0]
+                if value != "":
+                    d[key] = value
+    return d
+
+
+def map_powershell_fields(evt):
+    d = dotty(evt)
+    if 'event_data' in evt:
+        evt_fields = list(evt['event_data'].keys())
+        for field in evt_fields:
+            if field in powershell_fields_mapping:
+                d[powershell_fields_mapping[field]] = evt['event_data'][field]
+                del d['event_data'][field]
+    return dict(d)
+
+
+def add_engine_version(evt):
+    d = dotty(evt)
+    if "event_data.EngineVersion" in d:
+        engine_version = d["event_data.EngineVersion"]
+        if engine_version:
+            d["powershell.engine.version"] = engine_version
+            del d["event_data.EngineVersion"]
+    return dict(d)
+
+
+def add_pipeline_id(evt):
+    d = dotty(evt)
+    if "event_data.PipelineId" in d:
+        id = d["event_data.PipelineId"]
+        if id:
+            d["powershell.pipeline_id"] = id
+            del d["event_data.PipelineId"]
+    return dict(d)
+
+
+def add_runspace_id(evt):
+    d = dotty(evt)
+    if "event_data.RunspaceId" in d:
+        id = d["event_data.RunspaceId"]
+        if id:
+            d["powershell.runspace_id"] = id
+            del d["event_data.RunspaceId"]
+    return dict(d)
+
+
+def add_process_args(evt):
+    evt = split_command_line(evt, "process.command_line", "process.args")
+    d = dotty(evt)
+    if "process.args" in d and d["process.args"] and len(d["process.args"]) > 0:
+        d["process.args_count"] = len(d["process.args"])
+    return dict(d)
+
+
+def add_executable_version(evt):
+    d = dotty(evt)
+    if "event_data.HostVersion" in d:
+        version = d["event_data.HostVersion"]
+        if version:
+            d["powershell.process.executable_version"] = version
+            del d["event_data.HostVersion"]
+    return dict(d)
+
+
+def add_file_info(evt):
+    d = dotty(evt)
+    if "event_data.ScriptName" in d:
+        script_name = d["event_data.ScriptName"]
+        if script_name:
+            d["file.path"] = script_name
+            d["file.name"] = script_name.split("\\")[-1]
+            d["file.directory"] = '\\'.join(script_name.split("\\")[:-1])
+            if '.' in script_name:
+                script_extension = script_name.split(".")[-1]
+                if script_extension:
+                    d["file.extension"] = script_extension
+            del d["event_data.ScriptName"]
+    return dict(d)
+
+
+def add_command_value(evt):
+    d = dotty(evt)
+    if "event_data.CommandLine" in d:
+        cmd_value = d["event_data.CommandLine"]
+        if cmd_value:
+            d["powershell.command.value"] = cmd_value
+            del d["event_data.CommandLine"]
+    return dict(d)
+
+
+def add_command_path(evt):
+    d = dotty(evt)
+    if "event_data.CommandPath" in d:
+        cmd_path = d["event_data.CommandPath"]
+        if cmd_path:
+            d["powershell.command.path"] = cmd_path
+            del d["event_data.CommandPath"]
+    return dict(d)
+
+
+def add_command_name(evt):
+    d = dotty(evt)
+    if "event_data.CommandName" in d:
+        cmd_name = d["event_data.CommandName"]
+        if cmd_name:
+            d["powershell.command.name"] = cmd_name
+            del d["event_data.CommandName"]
+    return dict(d)
+
+
+def add_command_type(evt):
+    d = dotty(evt)
+    if "event_data.CommandType" in d:
+        cmd_type = d["event_data.CommandType"]
+        if cmd_type:
+            d["powershell.command.type"] = cmd_type
+            del d["event_data.CommandType"]
+    return dict(d)
+
+
+def _parse_raw_detail(raw):
+    raw_pattern = r'^(.+)\((.+)\)\:\s*(.+)?$'
+    parameter_binding_pattern = r'^.*name\=(.+);\s*value\=(.+)$'
+    match_obj = re.match(raw_pattern, raw)
+
+    if not match_obj or len(match_obj.groups()) != 3:
+        return {"value": raw}
+
+    g_type = match_obj.group(1).strip()
+    g_related_command = match_obj.group(2).strip()
+    g_value = match_obj.group(3).strip()
+
+    if g_type != "ParameterBinding":
+        return {"type": g_type, "related_command": g_related_command, "value": g_value}
+
+    match_parameter_binding_obj = re.match(parameter_binding_pattern, g_value)
+    if not match_parameter_binding_obj or len(match_parameter_binding_obj.groups()) != 2:
+        return {"value": g_value}
+
+    return {"type": g_type, "related_command": g_related_command, "name": match_parameter_binding_obj.group(1).strip() ,"value": match_parameter_binding_obj.group(2).strip()}
+
+
+def add_command_invocation_details(evt):
+    d = dotty(evt)
+    if 'event_data.Message' not in d:
+        return evt
+    message = d['event_data.Message']
+    if 'Details:' in message:
+        message = message.split("Details:")[1:]
+        if len(message) > 0:
+            message = message[0]
+            details = []
+            for raw in message.split("\n"):
+                if raw.strip() == '':
+                    continue
+                details.append(_parse_raw_detail(raw))
+            if len(details) > 0:
+                d["powershell.command.invocation_details"] = details
+    return dict(d)
+
+
+def add_connected_user(evt):
+    d = dotty(evt)
+    if "event_data.ConnectedUser" in d:
+        user_parts = d["event_data.ConnectedUser"].split("\\")
+        if len(user_parts) == 2:
+            d["powershell.connected_user.domain"] = user_parts[0]
+            d["powershell.connected_user.name"] = user_parts[1]
+        del d["event_data.ConnectedUser"]
+    return dict(d)
+
+
+def add_script_block_id(evt):
+    d = dotty(evt)
+    if "event_data.ScriptBlockId" in d:
+        id = d["event_data.ScriptBlockId"]
+        if id:
+            d["powershell.file.script_block_id"] = id
+            del d["event_data.ScriptBlockId"]
+    return dict(d)
+
+
+def add_script_block_text(evt):
+    d = dotty(evt)
+    if "event_data.ScriptBlockText" in d:
+        text = d["event_data.ScriptBlockText"]
+        if text:
+            d["powershell.file.script_block_text"] = text
+            del d["event_data.ScriptBlockText"]
+    return dict(d)
+
+
+def event_4xx_and_600_and_800_common(evt):
+    if 'event_data' in evt:
+        message = dissect_4xx_and_600_and_800(evt['event_data'])
+        evt['event_data'] = {**evt['event_data'], **message}
+    evt = map_powershell_fields(evt)
+    evt = add_engine_version(evt)
+    evt = add_pipeline_id(evt)
+    evt = add_runspace_id(evt)
+    evt = add_process_args(evt)
+    evt = add_executable_version(evt)
+    evt = add_file_info(evt)
+    evt = add_command_value(evt)
+    evt = add_command_path(evt)
+    evt = add_command_name(evt)
+    evt = add_command_type(evt)
+    return evt
+
+
+def event_4105_and_4106_common(evt):
+    evt = add_runspace_id(evt)
+    evt = add_script_block_id(evt)
+    return evt
+
+
+def event400(evt):
+    if 'event' in evt:
+        evt['event']['category'] = 'process'
+        evt['event']['type'] = 'start'
+    evt = event_4xx_and_600_and_800_common(evt)
+    return evt
+
+
+def event403(evt):
+    if 'event' in evt:
+        evt['event']['category'] = 'process'
+        evt['event']['type'] = 'end'
+    evt = event_4xx_and_600_and_800_common(evt)
+    return evt
+
+
+def event600(evt):
+    if 'event' in evt:
+        evt['event']['category'] = 'process'
+        evt['event']['type'] = 'info'
+    evt = event_4xx_and_600_and_800_common(evt)
+    return evt
+
+
+def event800(evt):
+    if 'event' in evt:
+        evt['event']['category'] = 'process'
+        evt['event']['type'] = 'info'
+    evt = event_4xx_and_600_and_800_common(evt)
+    evt = add_user(evt, user_field="UserId")
+    evt = add_command_invocation_details(evt)
+    return evt
+
+
+def event4103(evt):
+    if 'event_data' in evt:
+        message = dissect_4103(evt['event_data'])
+        evt['event_data'] = {**evt['event_data'], **message}
+    if 'event' in evt:
+        evt['event']['category'] = 'process'
+        evt['event']['type'] = 'info'
+    evt = map_powershell_fields(evt)
+    evt = add_engine_version(evt)
+    evt = add_pipeline_id(evt)
+    evt = add_runspace_id(evt)
+    evt = add_process_args(evt)
+    evt = add_executable_version(evt)
+    evt = add_file_info(evt)
+    evt = add_command_value(evt)
+    evt = add_command_path(evt)
+    evt = add_command_name(evt)
+    evt = add_command_type(evt)
+    evt = add_user(evt)
+    evt = add_connected_user(evt)
+    evt = add_command_invocation_details(evt)
+    return evt
+
+
+def event1404(evt):
+    if 'event' in evt:
+        evt['event']['category'] = 'process'
+        evt['event']['type'] = 'info'
+    evt = add_file_info(evt)
+    evt = add_script_block_id(evt)
+    evt = add_script_block_text(evt)
+    return evt
+
+
+def event1405(evt):
+    if 'event' in evt:
+        evt['event']['category'] = 'process'
+        evt['event']['type'] = 'start'
+    evt = event_4105_and_4106_common(evt)
+    return evt
+
+
+def event1406(evt):
+    if 'event' in evt:
+        evt['event']['category'] = 'process'
+        evt['event']['type'] = 'end'
+    evt = event_4105_and_4106_common(evt)
+    return evt
+
+
 def convert_event(evt):
     if 'event' in evt and 'id' in evt['event']:
         event_id = evt['event']['id']
@@ -280,6 +621,23 @@ def convert_event(evt):
             evt = add_network_type(evt)
             evt = set_additional_signature_fields(evt)
             evt = set_registry_fields(evt)
+        elif event_id in powershell_winlogbeat_events:  # PowerShell events
+            if event_id == 400:
+                evt = event400(evt)
+            elif event_id == 403:
+                evt = event403(evt)
+            elif event_id == 600:
+                evt = event600(evt)
+            elif event_id == 800:
+                evt = event800(evt)
+            elif event_id == 1403:
+                evt = event4103(evt)
+            elif event_id == 1404:
+                evt = event1404(evt)
+            elif event_id == 1405:
+                evt = event1405(evt)
+            elif event_id == 1406:
+                evt = event1406(evt)
         else:
             evt = map_windows_fields(evt)
             evt = set_process_name_from_path(evt, "process.executable", "process.name")

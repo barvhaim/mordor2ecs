@@ -105,3 +105,19 @@ sysmon_event_type = {
     1: "process_start",
     5: "process_end"
 }
+
+powershell_fields_mapping = {
+    "SequenceNumber": "event.sequence",
+    "NewEngineState": "powershell.engine.new_state",
+    "PreviousEngineState": "powershell.engine.previous_state",
+    "NewProviderState": "powershell.provider.new_state",
+    "ProviderName": "powershell.provider.name",
+    "HostId": "process.entity_id",
+    "HostApplication": "process.command_line",
+    "HostName": "process.title",
+    "DetailTotal": "powershell.total",
+    "DetailSequence": "powershell.sequence",
+    "ShellID": "powershell.id",
+    "MessageNumber": "powershell.sequence",
+    "MessageTotal": "powershell.total",
+}
