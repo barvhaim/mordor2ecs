@@ -273,12 +273,16 @@ def set_registry_fields(evt):
 
 # PowerShell events func -
 # based on https://github.com/elastic/beats/blob/3ef18111c43dad3de7aebe944935ee2e36cab3d6/x-pack/winlogbeat/module/powershell/config/winlogbeat-powershell.js
-def dissect_4xx_and_600_and_800(event_data):
+def dissect_4xx_and_600_and_800(event_data, is_800=False):
     d = {}
     if 'Message' not in event_data:
         return d
     message = event_data['Message']
-    message_parts = message.split("\r\n\t")
+    message_chunks = message.split("\r\n\r\n")
+    if is_800 and len(message_chunks) > 1:
+        message_parts = message[1].split("\r\n\t")
+    else:
+        message_parts = message.split("\r\n\t")
     for kv in message_parts:
         if "=" in kv:
             kv = kv.replace('\r','').replace('\n','').replace('\t','')
@@ -495,9 +499,9 @@ def add_script_block_text(evt):
     return dict(d)
 
 
-def event_4xx_and_600_and_800_common(evt):
+def event_4xx_and_600_and_800_common(evt, is_800=False):
     if 'event_data' in evt:
-        message = dissect_4xx_and_600_and_800(evt['event_data'])
+        message = dissect_4xx_and_600_and_800(evt['event_data'], is_800)
         evt['event_data'] = {**evt['event_data'], **message}
     evt = map_powershell_fields(evt)
     evt = add_engine_version(evt)
@@ -547,7 +551,7 @@ def event800(evt):
     if 'event' in evt:
         evt['event']['category'] = 'process'
         evt['event']['type'] = 'info'
-    evt = event_4xx_and_600_and_800_common(evt)
+    evt = event_4xx_and_600_and_800_common(evt, is_800=True)
     evt = add_user(evt, user_field="UserId")
     evt = add_command_invocation_details(evt)
     return evt

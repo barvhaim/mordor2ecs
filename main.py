@@ -19,3 +19,4 @@ if __name__ == '__main__':
                 if events_count > sample_size:
                     break
                 events_count += 1
+    print('total events: ' + str(events_count))
