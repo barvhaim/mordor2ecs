@@ -278,9 +278,9 @@ def dissect_4xx_and_600_and_800(event_data, is_800=False):
     if 'Message' not in event_data:
         return d
     message = event_data['Message']
-    message_chunks = message.split("\r\n\r\n")
-    if is_800 and len(message_chunks) > 1:
-        message_parts = message[1].split("\r\n\t")
+    if is_800 and 'Context Information:' in message and 'Details:' in message:
+        context_information = message.split("Details:")[0].split("Context Information:")[1]
+        message_parts = [m.strip() for m in context_information.split("\r\n\t")]
     else:
         message_parts = message.split("\r\n\t")
     for kv in message_parts:
@@ -300,15 +300,18 @@ def dissect_4103(event_data):
     if 'Message' not in event_data:
         return d
     message = event_data['Message']
-    message_parts = message.split("        ")
-    for kv in message_parts:
-        if " = " in kv:
-            kv_parts = kv.split(" = ")
-            if len(kv_parts) == 2:
-                key = "".join(kv_parts[0].strip().split(" "))
-                value = kv_parts[1].strip().split("\r\n\r\n\r\n")[0]
-                if value != "":
-                    d[key] = value
+    if 'Context:' in message and 'User Data:' in message:
+        context = message.split('User Data:')[0].split('Context:')[1]
+        context_parts = [m.strip() for m in context.split('\n')]
+
+        for kv in context_parts:
+            if " = " in kv:
+                kv_parts = kv.split(" = ")
+                if len(kv_parts) == 2:
+                    key = "".join(kv_parts[0].strip().split(" "))
+                    value = kv_parts[1].strip().split("\r\n\r\n\r\n")[0]
+                    if value != "":
+                        d[key] = value
     return d
 
 
